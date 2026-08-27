@@ -89,7 +89,7 @@ const POSMainLayout: React.FC = () => {
                         )}
                       </div>
                       <div className="text-emerald-400 font-black text-sm">
-                        {currencySymbol} {cartTotals.grandTotal.toLocaleString()}
+                        {currencySymbol} {(cartTotals?.total ?? 0).toLocaleString()}
                       </div>
                     </div>
                   </div>
