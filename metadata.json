@@ -1,0 +1,6 @@
+{
+  "name": "Davetech POS",
+  "description": "A modern touch-screen cloud POS system for hotels, restaurants, bars, shops, and service businesses.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
