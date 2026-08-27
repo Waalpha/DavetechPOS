@@ -12,6 +12,9 @@ import {
   Phone,
   Mail,
   Send,
+  Wifi,
+  Smartphone,
+  AlertCircle,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 import { soundFx } from '../utils/audio';
@@ -23,21 +26,47 @@ export const ReceiptModal: React.FC = () => {
     lastCompletedOrder,
     currentBusiness,
     currencySymbol,
+    printerConfig,
+    setShowWifiPrinterModal,
+    printReceiptToWifi,
   } = usePOS();
 
   const [copied, setCopied] = useState(false);
   const [digitalPhone, setDigitalPhone] = useState('');
   const [sentSms, setSentSms] = useState(false);
+  const [wifiPrinting, setWifiPrinting] = useState(false);
+  const [wifiPrintStatus, setWifiPrintStatus] = useState<{ success: boolean; message: string } | null>(null);
 
   if (!showReceiptModal || !lastCompletedOrder) return null;
 
   const order = lastCompletedOrder;
   const orderDate = new Date(order.createdAt).toLocaleString();
 
-  // Print receipt
-  const handlePrint = () => {
+  // Print receipt via browser dialog / AirPrint
+  const handleBrowserPrint = () => {
     soundFx.playClick();
     window.print();
+  };
+
+  // Direct Wi-Fi Thermal Print (ESC/POS)
+  const handleWifiPrint = async () => {
+    soundFx.playClick();
+    setWifiPrinting(true);
+    setWifiPrintStatus(null);
+    try {
+      const res = await printReceiptToWifi(order);
+      setWifiPrintStatus(res);
+      if (res.success) {
+        soundFx.playSuccess();
+      } else {
+        soundFx.playError();
+      }
+    } catch {
+      setWifiPrintStatus({ success: false, message: 'Print command failed' });
+      soundFx.playError();
+    } finally {
+      setWifiPrinting(false);
+    }
   };
 
   // Generate clean plaintext receipt for SMS / WhatsApp
@@ -288,27 +317,66 @@ export const ReceiptModal: React.FC = () => {
             </div>
           </div>
 
-          {/* Right Action Panel: Thermal Print, Digital SMS/WhatsApp */}
-          <div className="md:col-span-5 space-y-4 flex flex-col justify-between">
-            <div className="space-y-3">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Receipt Actions
-              </h4>
+          {/* Right Action Panel: Thermal Print, Wi-Fi Print, Digital SMS/WhatsApp */}
+          <div className="md:col-span-5 space-y-3.5 flex flex-col justify-between">
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  Print & Share
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setShowWifiPrinterModal(true)}
+                  className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
+                >
+                  <Wifi className="w-3 h-3" />
+                  <span>{printerConfig.ipAddress}</span>
+                </button>
+              </div>
 
-              {/* Thermal Print Button */}
+              {/* Status Alert */}
+              {wifiPrintStatus && (
+                <div
+                  className={`p-2.5 rounded-xl border text-[11px] flex items-center gap-2 ${
+                    wifiPrintStatus.success
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-bold'
+                      : 'bg-rose-50 border-rose-200 text-rose-800'
+                  }`}
+                >
+                  {wifiPrintStatus.success ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  )}
+                  <span className="truncate">{wifiPrintStatus.message}</span>
+                </div>
+              )}
+
+              {/* Primary Wi-Fi Thermal Print Button */}
               <button
-                onClick={handlePrint}
-                className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-2xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
+                onClick={handleWifiPrint}
+                disabled={wifiPrinting}
+                className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-extrabold text-xs rounded-2xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                id="btn-wifi-print-receipt"
+              >
+                <Wifi className="w-4 h-4" />
+                <span>{wifiPrinting ? 'SENDING TO WI-FI PRINTER...' : 'PRINT OVER WI-FI (ESC/POS)'}</span>
+              </button>
+
+              {/* Native System Print / AirPrint */}
+              <button
+                onClick={handleBrowserPrint}
+                className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-2xl border border-slate-300 shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
                 id="btn-print-receipt"
               >
-                <Printer className="w-4 h-4" />
-                <span>PRINT 80MM RECEIPT</span>
+                <Printer className="w-4 h-4 text-slate-600" />
+                <span>System Print / AirPrint Dialog</span>
               </button>
 
               {/* WhatsApp Share Button */}
               <button
                 onClick={handleSendWhatsApp}
-                className="w-full py-3 px-4 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-2xl shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                className="w-full py-2.5 px-4 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-2xl shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
                 id="btn-whatsapp-receipt"
               >
                 <Share2 className="w-4 h-4" />
@@ -318,14 +386,14 @@ export const ReceiptModal: React.FC = () => {
               {/* Copy Plaintext Digital Receipt */}
               <button
                 onClick={handleCopyDigital}
-                className="w-full py-3 px-4 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-2xl border border-slate-200 shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                className="w-full py-2.5 px-4 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-2xl border border-slate-200 shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
               >
                 {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                <span>{copied ? 'Copied to Clipboard!' : 'Copy Digital Receipt Text'}</span>
+                <span>{copied ? 'Copied to Clipboard!' : 'Copy Receipt Plaintext'}</span>
               </button>
 
               {/* Digital SMS Form */}
-              <form onSubmit={handleSendSms} className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2 shadow-xs">
+              <form onSubmit={handleSendSms} className="p-2.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-2 shadow-xs">
                 <label className="text-[11px] font-bold text-slate-700 block">
                   Send Digital SMS E-Receipt
                 </label>
@@ -335,11 +403,11 @@ export const ReceiptModal: React.FC = () => {
                     value={digitalPhone}
                     onChange={(e) => setDigitalPhone(e.target.value)}
                     placeholder="07XX XXX XXX"
-                    className="flex-1 px-3 py-2 bg-white text-slate-900 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-xs"
+                    className="flex-1 px-3 py-1.5 bg-white text-slate-900 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-xs"
                   />
                   <button
                     type="submit"
-                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl flex items-center gap-1 shadow-xs cursor-pointer"
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl flex items-center gap-1 shadow-xs cursor-pointer"
                   >
                     <Send className="w-3.5 h-3.5" />
                     <span>Send</span>

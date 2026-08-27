@@ -242,3 +242,31 @@ export interface WaiterReadyNotification {
   itemsSummary: string;
   acknowledged: boolean;
 }
+
+export type PrinterConnectionType =
+  | 'wifi_ip'
+  | 'airprint_mopria'
+  | 'rawbt_android'
+  | 'bluetooth_escpos'
+  | 'epson_epos';
+
+export type PrinterPaperSize = '80mm' | '58mm';
+
+export interface WifiPrinterConfig {
+  enabled: boolean;
+  name: string;
+  connectionType: PrinterConnectionType;
+  ipAddress: string; // e.g. 192.168.1.100 or 192.168.0.87
+  port: number; // default 9100 (standard raw socket) or 8008 (epos)
+  paperSize: PrinterPaperSize;
+  autoPrintReceipt: boolean;
+  autoPrintKitchenTicket: boolean;
+  openCashDrawerOnCash: boolean;
+  cutPaper: boolean;
+  copies: number;
+  kitchenPrinterIp: string;
+  kitchenPrinterPort: number;
+  kitchenPrinterEnabled: boolean;
+  lastConnectedAt?: string;
+  status: 'connected' | 'idle' | 'printing' | 'error';
+}

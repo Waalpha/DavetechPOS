@@ -36,6 +36,8 @@ import {
   UserPlus,
   KeyRound,
   FileBarChart,
+  Wifi,
+  Printer,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -86,6 +88,8 @@ export const OwnerDashboard: React.FC = () => {
     addCashierUser,
     updateCashierUser,
     deleteCashierUser,
+    printerConfig,
+    setShowWifiPrinterModal,
   } = usePOS();
 
   // Tab State
@@ -1650,115 +1654,167 @@ export const OwnerDashboard: React.FC = () => {
             8. POS & TAX SETTINGS
             ======================================================== */}
         {activeTab === 'settings' && (
-          <form onSubmit={handleSaveSettings} className="p-5 bg-white rounded-2xl border border-slate-200 space-y-4 max-w-2xl shadow-xs">
-            <h3 className="font-bold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-2">
-              <Settings className="w-4 h-4 text-indigo-600" /> Business Profile & Receipt Configuration
-            </h3>
+          <div className="space-y-6 max-w-2xl">
+            <form onSubmit={handleSaveSettings} className="p-5 bg-white rounded-2xl border border-slate-200 space-y-4 shadow-xs">
+              <h3 className="font-bold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-2">
+                <Settings className="w-4 h-4 text-indigo-600" /> Business Profile & Receipt Configuration
+              </h3>
 
-            {settingsSaved && (
-              <div className="p-3 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-200 text-xs font-bold flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Configuration changes saved successfully!</span>
+              {settingsSaved && (
+                <div className="p-3 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-200 text-xs font-bold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Configuration changes saved successfully!</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Business Name</label>
+                  <input
+                    type="text"
+                    value={bizName}
+                    onChange={(e) => setBizName(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Tagline</label>
+                  <input
+                    type="text"
+                    value={bizTagline}
+                    onChange={(e) => setBizTagline(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Business Mode Archetype</label>
+                  <select
+                    value={bizMode}
+                    onChange={(e) => setBizMode(e.target.value as BusinessMode)}
+                    className="w-full px-3 py-2 bg-slate-50 text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 capitalize font-bold"
+                  >
+                    <option value="restaurant">Restaurant & Dining (Tables + KDS)</option>
+                    <option value="hotel">Hotel & Resort (Rooms + Folios)</option>
+                    <option value="bar">Speed Bar & Club (1-Tap Tabs)</option>
+                    <option value="shop">Retail Shop & Supermarket (Barcodes)</option>
+                    <option value="services">Service & Salon (Bookings)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">VAT / Tax Rate (%)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={bizTaxRate}
+                    onChange={(e) => setBizTaxRate(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">KRA PIN / Tax Number</label>
+                  <input
+                    type="text"
+                    value={bizTaxPin}
+                    onChange={(e) => setBizTaxPin(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 uppercase font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Official Phone</label>
+                  <input
+                    type="text"
+                    value={bizPhone}
+                    onChange={(e) => setBizPhone(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="font-bold text-slate-700 block mb-1">Physical Address</label>
+                  <input
+                    type="text"
+                    value={bizAddress}
+                    onChange={(e) => setBizAddress(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="font-bold text-slate-700 block mb-1">Receipt Footer Note</label>
+                  <textarea
+                    value={bizFooter}
+                    onChange={(e) => setBizFooter(e.target.value)}
+                    rows={2}
+                    className="w-full px-3 py-2 bg-slate-50 text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
               </div>
-            )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Business Name</label>
-                <input
-                  type="text"
-                  value={bizName}
-                  onChange={(e) => setBizName(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Tagline</label>
-                <input
-                  type="text"
-                  value={bizTagline}
-                  onChange={(e) => setBizTagline(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Business Mode Archetype</label>
-                <select
-                  value={bizMode}
-                  onChange={(e) => setBizMode(e.target.value as BusinessMode)}
-                  className="w-full px-3 py-2 bg-slate-50 text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 capitalize font-bold"
+              <div className="pt-2 flex justify-end">
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer"
                 >
-                  <option value="restaurant">Restaurant & Dining (Tables + KDS)</option>
-                  <option value="hotel">Hotel & Resort (Rooms + Folios)</option>
-                  <option value="bar">Speed Bar & Club (1-Tap Tabs)</option>
-                  <option value="shop">Retail Shop & Supermarket (Barcodes)</option>
-                  <option value="services">Service & Salon (Bookings)</option>
-                </select>
+                  Save Settings
+                </button>
+              </div>
+            </form>
+
+            {/* Wi-Fi Thermal Printer & Hardware Card */}
+            <div className="p-5 bg-white rounded-2xl border border-slate-200 space-y-4 shadow-xs">
+              <div className="flex items-center justify-between">
+                <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+                  <Wifi className="w-4 h-4 text-emerald-600" />
+                  <span>Wi-Fi & Mobile ESC/POS Thermal Printer</span>
+                </h3>
+                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                  printerConfig.enabled
+                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                    : 'bg-slate-100 text-slate-600 border border-slate-300'
+                }`}>
+                  {printerConfig.enabled ? 'Active / Online' : 'Disabled'}
+                </span>
               </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">VAT / Tax Rate (%)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={bizTaxRate}
-                  onChange={(e) => setBizTaxRate(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
-                />
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Connect Android phones, iPhones, and tablets to any 80mm or 58mm ESC/POS Wi-Fi thermal receipt printer over local network IP (e.g. <code>{printerConfig.ipAddress}:{printerConfig.port}</code>).
+              </p>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <div className="text-[10px] text-slate-400 font-bold uppercase">Printer IP</div>
+                  <div className="font-mono font-extrabold text-slate-800 text-xs mt-0.5">{printerConfig.ipAddress}</div>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <div className="text-[10px] text-slate-400 font-bold uppercase">Port</div>
+                  <div className="font-mono font-extrabold text-slate-800 text-xs mt-0.5">{printerConfig.port}</div>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <div className="text-[10px] text-slate-400 font-bold uppercase">Roll Width</div>
+                  <div className="font-extrabold text-slate-800 text-xs mt-0.5">{printerConfig.paperSize}</div>
+                </div>
               </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">KRA PIN / Tax Number</label>
-                <input
-                  type="text"
-                  value={bizTaxPin}
-                  onChange={(e) => setBizTaxPin(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 uppercase font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Official Phone</label>
-                <input
-                  type="text"
-                  value={bizPhone}
-                  onChange={(e) => setBizPhone(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div className="sm:col-span-2">
-                <label className="font-bold text-slate-700 block mb-1">Physical Address</label>
-                <input
-                  type="text"
-                  value={bizAddress}
-                  onChange={(e) => setBizAddress(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div className="sm:col-span-2">
-                <label className="font-bold text-slate-700 block mb-1">Receipt Footer Note</label>
-                <textarea
-                  value={bizFooter}
-                  onChange={(e) => setBizFooter(e.target.value)}
-                  rows={2}
-                  className="w-full px-3 py-2 bg-slate-50 text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
+              <div className="pt-1 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playClick();
+                    setShowWifiPrinterModal(true);
+                  }}
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Configure Wi-Fi Printer & Test</span>
+                </button>
               </div>
             </div>
-
-            <div className="pt-2 flex justify-end">
-              <button
-                type="submit"
-                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer"
-              >
-                Save Settings
-              </button>
-            </div>
-          </form>
+          </div>
         )}
       </div>
 

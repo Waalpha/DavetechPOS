@@ -26,10 +26,16 @@ import {
   Clock,
   ShieldCheck,
   User,
+  Wifi,
+  WifiOff,
+  CloudUpload,
+  HardDrive,
+  Printer,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 import { BusinessMode, POSViewType } from '../types/pos';
 import { soundFx } from '../utils/audio';
+import { OfflineSyncModal } from './OfflineSyncModal';
 
 export const Navbar: React.FC = () => {
   const {
@@ -56,11 +62,16 @@ export const Navbar: React.FC = () => {
     dismissNotification,
     cartTotals,
     activeUnpaidOrders,
+    printerConfig,
+    setShowWifiPrinterModal,
+    isOnline,
+    pendingOfflineSyncCount,
   } = usePOS();
 
   const [showBusinessDropdown, setShowBusinessDropdown] = useState(false);
   const [showNotificationDrawer, setShowNotificationDrawer] = useState(false);
   const [showMobileManagerMenu, setShowMobileManagerMenu] = useState(false);
+  const [showOfflineSyncModal, setShowOfflineSyncModal] = useState(false);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -472,6 +483,72 @@ export const Navbar: React.FC = () => {
             </button>
           )}
 
+          {/* Online / Offline Service Worker Resilience Status */}
+          <button
+            onClick={() => {
+              soundFx.playClick();
+              setShowOfflineSyncModal(true);
+            }}
+            className={`p-2 rounded-xl text-xs border transition-all relative cursor-pointer flex items-center gap-1.5 ${
+              !isOnline
+                ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
+                : pendingOfflineSyncCount > 0
+                ? 'bg-indigo-50 text-indigo-800 border-indigo-200 hover:bg-indigo-100'
+                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+            }`}
+            title={
+              !isOnline
+                ? 'Offline Outage Mode Active (Service Worker running) - Click to manage'
+                : pendingOfflineSyncCount > 0
+                ? `${pendingOfflineSyncCount} actions queued for sync - Click to view`
+                : 'Service Worker Active & Online - Click to inspect cache'
+            }
+            id="btn-navbar-offline-sync"
+          >
+            <div className="relative">
+              {!isOnline ? (
+                <WifiOff className="w-4 h-4 text-amber-700" />
+              ) : pendingOfflineSyncCount > 0 ? (
+                <CloudUpload className="w-4 h-4 text-indigo-600 animate-pulse" />
+              ) : (
+                <HardDrive className="w-4 h-4 text-emerald-600" />
+              )}
+              {pendingOfflineSyncCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 px-1 py-0.2 bg-amber-500 text-slate-950 font-black text-[9px] rounded-full ring-2 ring-white">
+                  {pendingOfflineSyncCount}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] font-extrabold hidden lg:inline">
+              {!isOnline ? 'Offline' : pendingOfflineSyncCount > 0 ? `${pendingOfflineSyncCount} Queued` : 'Cached'}
+            </span>
+          </button>
+
+          {/* Wi-Fi Printer Status & Config Button */}
+          <button
+            onClick={() => {
+              soundFx.playClick();
+              setShowWifiPrinterModal(true);
+            }}
+            className={`p-2 rounded-xl text-xs border transition-all relative cursor-pointer flex items-center gap-1.5 ${
+              printerConfig.enabled
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'
+            }`}
+            title={`Wi-Fi Thermal Printer (${printerConfig.ipAddress}) - Click to configure / test`}
+            id="btn-navbar-wifi-printer"
+          >
+            <div className="relative">
+              <Wifi className="w-4 h-4" />
+              {printerConfig.enabled && (
+                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white"></span>
+              )}
+            </div>
+            <span className="text-[10px] font-extrabold hidden md:inline font-mono">
+              {printerConfig.ipAddress.split('.').slice(-2).join('.')}
+            </span>
+          </button>
+
           {/* Audio Toggle */}
           <button
             onClick={() => setSoundEnabled(!soundEnabled)}
@@ -804,6 +881,12 @@ export const Navbar: React.FC = () => {
           </div>
         )}
       </nav>
+
+      {/* Service Worker & Offline Sync Modal */}
+      <OfflineSyncModal
+        isOpen={showOfflineSyncModal}
+        onClose={() => setShowOfflineSyncModal(false)}
+      />
     </>
   );
 };

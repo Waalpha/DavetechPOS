@@ -38,21 +38,50 @@
 }
 
 @media print {
+  @page {
+    margin: 0;
+    size: 80mm auto;
+  }
+
+  body {
+    background: #ffffff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
   body * {
     visibility: hidden;
   }
-  #printable-receipt, #printable-receipt * {
+
+  #printable-receipt,
+  #printable-receipt *,
+  .printable-bill,
+  .printable-bill *,
+  #printable-shift-report,
+  #printable-shift-report *,
+  #printable-kitchen-ticket,
+  #printable-kitchen-ticket *,
+  #printable-test-slip,
+  #printable-test-slip * {
     visibility: visible;
   }
-  #printable-receipt {
+
+  #printable-receipt,
+  .printable-bill,
+  #printable-shift-report,
+  #printable-kitchen-ticket,
+  #printable-test-slip {
     position: absolute;
     left: 0;
     top: 0;
     width: 80mm !important;
     max-width: 80mm !important;
-    padding: 0 !important;
+    padding: 4mm !important;
     margin: 0 !important;
     box-shadow: none !important;
     border: none !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-family: 'Courier New', Courier, monospace !important;
   }
 }

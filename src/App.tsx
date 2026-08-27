@@ -18,6 +18,9 @@ import { BarcodeScannerModal } from './components/BarcodeScannerModal';
 import { OwnerDashboard } from './components/OwnerDashboard';
 import { CustomerOrdersView } from './components/CustomerOrdersView';
 import { ManagerAuthModal } from './components/ManagerAuthModal';
+import { WifiPrinterModal } from './components/WifiPrinterModal';
+import { OfflineStatusBanner } from './components/OfflineStatusBanner';
+import { OfflineSyncModal } from './components/OfflineSyncModal';
 
 const POSMainLayout: React.FC = () => {
   const { currentView, isHighContrast, cart, cartTotals, currencySymbol, selectedTable } = usePOS();
@@ -28,6 +31,7 @@ const POSMainLayout: React.FC = () => {
   const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
   const [isBarcodeModalOpen, setIsBarcodeModalOpen] = useState(false);
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
+  const [isOfflineModalOpen, setIsOfflineModalOpen] = useState(false);
 
   return (
     <div
@@ -37,6 +41,9 @@ const POSMainLayout: React.FC = () => {
     >
       {/* Top POS Navbar (Register, Tables, Orders & Bills, KDS, Manager Tabs, PIN switch) */}
       <Navbar />
+
+      {/* Offline Status & Outage Banner */}
+      <OfflineStatusBanner onOpenModal={() => setIsOfflineModalOpen(true)} />
 
       {/* Main Content Area */}
       <main className="flex-1 flex overflow-hidden relative pb-16 md:pb-0">
@@ -175,6 +182,7 @@ const POSMainLayout: React.FC = () => {
       <CashierPinModal />
       <ShiftReportModal />
       <ManagerAuthModal />
+      <WifiPrinterModal />
 
       <RestaurantTableModal
         isOpen={isTableModalOpen}
@@ -189,6 +197,11 @@ const POSMainLayout: React.FC = () => {
       <BarcodeScannerModal
         isOpen={isBarcodeModalOpen}
         onClose={() => setIsBarcodeModalOpen(false)}
+      />
+
+      <OfflineSyncModal
+        isOpen={isOfflineModalOpen}
+        onClose={() => setIsOfflineModalOpen(false)}
       />
     </div>
   );

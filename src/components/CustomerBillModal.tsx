@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   X,
   Printer,
@@ -10,6 +10,7 @@ import {
   Clock,
   User,
   Users,
+  Wifi,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 import { TableInfo, OrderRecord, CartItem } from '../types/pos';
@@ -26,8 +27,10 @@ export const CustomerBillModal: React.FC<CustomerBillModalProps> = ({
   onClose,
   onProceedToPayment,
 }) => {
-  const { currentBusiness, activeBillData, currencySymbol } = usePOS();
+  const { currentBusiness, activeBillData, currencySymbol, printReceiptToWifi, printerConfig } = usePOS();
   const printRef = useRef<HTMLDivElement>(null);
+  const [wifiPrinting, setWifiPrinting] = useState(false);
+  const [wifiStatus, setWifiStatus] = useState<string | null>(null);
 
   if (!isOpen || !activeBillData) return null;
 
@@ -63,6 +66,46 @@ export const CustomerBillModal: React.FC<CustomerBillModalProps> = ({
   const handlePrint = () => {
     soundFx.playClick();
     window.print();
+  };
+
+  const handleWifiPrintBill = async () => {
+    soundFx.playClick();
+    setWifiPrinting(true);
+    setWifiStatus(null);
+    try {
+      const mockOrderRecord: OrderRecord = {
+        id: `bill-${Date.now()}`,
+        orderNumber: billNumber,
+        businessId: currentBusiness.id,
+        businessName: currentBusiness.name,
+        cashierId: 'c-1',
+        cashierName: waiterName,
+        waiterName: waiterName,
+        shiftId: 'shift-1',
+        createdAt: new Date().toISOString(),
+        items: items,
+        orderType: isTable ? 'dine_in' : 'takeaway',
+        tableNumber: destinationName,
+        guestCount: guestCount,
+        subtotal: taxableBase,
+        taxAmount: taxAmount,
+        discountAmount: 0,
+        discountPercent: 0,
+        totalAmount: totalDue,
+        paymentMethod: 'cash',
+        status: 'parked',
+        billStatus: 'unpaid',
+      };
+      const res = await printReceiptToWifi(mockOrderRecord);
+      setWifiStatus(res.message);
+      if (res.success) soundFx.playSuccess();
+      else soundFx.playError();
+    } catch {
+      setWifiStatus('Failed to send bill to Wi-Fi printer');
+      soundFx.playError();
+    } finally {
+      setWifiPrinting(false);
+    }
   };
 
   return (
@@ -261,19 +304,37 @@ export const CustomerBillModal: React.FC<CustomerBillModalProps> = ({
           </div>
         </div>
 
+        {/* Wi-Fi Status Banner */}
+        {wifiStatus && (
+          <div className="px-4 py-2 bg-indigo-50 border-t border-indigo-100 text-[11px] font-bold text-indigo-900 flex items-center justify-between">
+            <span className="flex items-center gap-1.5">
+              <Wifi className="w-3.5 h-3.5 text-indigo-600" />
+              <span>{wifiStatus}</span>
+            </span>
+          </div>
+        )}
+
         {/* Modal Action Controls */}
         <div className="p-4 bg-white border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <button
+              onClick={handleWifiPrintBill}
+              disabled={wifiPrinting}
+              className="flex-1 sm:flex-none px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+            >
+              <Wifi className="w-4 h-4" />
+              <span>{wifiPrinting ? 'Sending...' : 'Wi-Fi Print'}</span>
+            </button>
+            <button
               onClick={handlePrint}
-              className="flex-1 sm:flex-none px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl flex items-center justify-center gap-2 border border-slate-300 transition-colors shadow-2xs cursor-pointer"
+              className="flex-1 sm:flex-none px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 border border-slate-300 transition-colors shadow-2xs cursor-pointer"
             >
               <Printer className="w-4 h-4 text-slate-700" />
-              <span>Print Bill (80mm)</span>
+              <span>System (80mm)</span>
             </button>
             <button
               onClick={onClose}
-              className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl transition-colors"
+              className="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl transition-colors cursor-pointer"
             >
               Cancel
             </button>

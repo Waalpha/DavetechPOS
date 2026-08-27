@@ -20,6 +20,7 @@ import {
   TableStatus,
   WaiterReadyNotification,
   TableOrderRound,
+  WifiPrinterConfig,
 } from '../types/pos';
 import {
   INITIAL_BUSINESSES,
@@ -31,6 +32,16 @@ import {
   INITIAL_ORDER_HISTORY,
 } from '../data/mockData';
 import { soundFx } from '../utils/audio';
+import {
+  loadPrinterConfig,
+  savePrinterConfig,
+  generateReceiptPlainText,
+  generateKitchenTicketPlainText,
+  printToWifiPrinter,
+  sendWifiPrinterTest,
+} from '../utils/printerService';
+import { syncCoreDataToServiceWorker } from '../utils/serviceWorkerRegistration';
+import { offlineSyncManager } from '../utils/offlineSyncManager';
 
 export interface CheckoutTargetInfo {
   tableId?: string;
@@ -202,6 +213,21 @@ interface POSContextType {
   isHighContrast: boolean;
   setIsHighContrast: (high: boolean) => void;
   currencySymbol: string;
+
+  // Wi-Fi & Thermal ESC/POS Printer
+  printerConfig: WifiPrinterConfig;
+  updatePrinterConfig: (updated: Partial<WifiPrinterConfig>) => void;
+  showWifiPrinterModal: boolean;
+  setShowWifiPrinterModal: (show: boolean) => void;
+  printReceiptToWifi: (order?: OrderRecord) => Promise<{ success: boolean; message: string; modeUsed?: string }>;
+  printKitchenTicketToWifi: (ticket: OrderRecord | KdsTicket) => Promise<{ success: boolean; message: string; modeUsed?: string }>;
+  testWifiPrinter: () => Promise<{ success: boolean; message: string }>;
+
+  // Offline & Service Worker Resilience
+  isOnline: boolean;
+  pendingOfflineSyncCount: number;
+  lastSyncTimestamp: string | null;
+  triggerManualSync: () => Promise<{ syncedCount: number; errors: number }>;
 }
 
 const POSContext = createContext<POSContextType | undefined>(undefined);
@@ -644,6 +670,39 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [showShiftReportModal, setShowShiftReportModal] = useState<boolean>(false);
   const [currentView, setCurrentViewState] = useState<POSViewType>('pos');
 
+  // Wi-Fi / ESC/POS Printer State
+  const [printerConfig, setPrinterConfigState] = useState<WifiPrinterConfig>(() => loadPrinterConfig());
+  const [showWifiPrinterModal, setShowWifiPrinterModal] = useState<boolean>(false);
+
+  const updatePrinterConfig = (updated: Partial<WifiPrinterConfig>) => {
+    setPrinterConfigState((prev) => {
+      const next = { ...prev, ...updated };
+      savePrinterConfig(next);
+      return next;
+    });
+  };
+
+  const printReceiptToWifi = async (orderToPrint?: OrderRecord) => {
+    const targetOrder = orderToPrint || lastCompletedOrder;
+    if (!targetOrder) {
+      return { success: false, message: 'No receipt available to print' };
+    }
+    const text = generateReceiptPlainText(targetOrder, currentBusiness, printerConfig.paperSize);
+    return await printToWifiPrinter(text, printerConfig, {
+      type: 'receipt',
+      openDrawer: printerConfig.openCashDrawerOnCash && targetOrder.paymentMethod === 'cash',
+    });
+  };
+
+  const printKitchenTicketToWifi = async (ticket: OrderRecord | KdsTicket) => {
+    const text = generateKitchenTicketPlainText(ticket, printerConfig.paperSize);
+    return await printToWifiPrinter(text, printerConfig, { type: 'kitchen' });
+  };
+
+  const testWifiPrinter = async () => {
+    return await sendWifiPrinterTest(printerConfig);
+  };
+
   // Manager Authorization Modal State
   const [showManagerAuthModal, setShowManagerAuthModal] = useState<boolean>(false);
   const [managerAuthPromptText, setManagerAuthPromptText] = useState<string>('Manager Authorization Required');
@@ -688,6 +747,45 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem('davetech_tables', JSON.stringify(tables));
   }, [tables]);
+
+  // Offline & Service Worker Resilience State
+  const [isOnline, setIsOnline] = useState<boolean>(() => offlineSyncManager.getIsOnline());
+  const [pendingOfflineSyncCount, setPendingOfflineSyncCount] = useState<number>(() => offlineSyncManager.getPendingCount());
+  const [lastSyncTimestamp, setLastSyncTimestamp] = useState<string | null>(() => offlineSyncManager.getLastSyncTime());
+
+  // Subscribe to network status & sync queue changes
+  useEffect(() => {
+    const unsubscribe = offlineSyncManager.subscribe((online, count) => {
+      setIsOnline(online);
+      setPendingOfflineSyncCount(count);
+      setLastSyncTimestamp(offlineSyncManager.getLastSyncTime());
+    });
+    return unsubscribe;
+  }, []);
+
+  // Proactively cache core POS data to Service Worker
+  useEffect(() => {
+    syncCoreDataToServiceWorker({
+      businesses,
+      currentBusinessId,
+      products,
+      categories: CATEGORIES,
+      tables,
+      cashiers,
+      lastUpdated: new Date().toISOString(),
+    });
+  }, [businesses, currentBusinessId, products, tables, cashiers]);
+
+  // Manual Trigger for sync
+  const triggerManualSync = useCallback(async () => {
+    soundFx.playClick();
+    const result = await offlineSyncManager.processSyncQueue();
+    if (result.syncedCount > 0) {
+      soundFx.playSuccess();
+    }
+    setLastSyncTimestamp(offlineSyncManager.getLastSyncTime());
+    return result;
+  }, []);
 
   // Protected View Switching
   const setCurrentView = (view: POSViewType) => {
@@ -1360,6 +1458,18 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Clear cart for next order round
     setCart([]);
+
+    // Record offline sync queue
+    offlineSyncManager.enqueueAction('kitchen_round_sent', {
+      ticketId: newKdsTicket.id,
+      orderNumber: newKdsTicket.orderNumber,
+      destinationName,
+    });
+
+    // Auto-print Kitchen Order Ticket (KOT) over Wi-Fi if enabled
+    if (printerConfig.enabled && printerConfig.autoPrintKitchenTicket) {
+      printKitchenTicketToWifi(newKdsTicket);
+    }
   };
 
   // 4. Kitchen marks order as Ready -> triggers notification for waiter
@@ -1692,13 +1802,22 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       clearCart();
       soundFx.playSuccess();
 
+      // Enqueue offline action for sync resilience
+      offlineSyncManager.enqueueAction('order_completed', newOrder);
+
+      // Auto-print receipt to Wi-Fi printer if enabled
+      if (printerConfig.enabled && printerConfig.autoPrintReceipt) {
+        printReceiptToWifi(newOrder);
+      }
+
       return newOrder;
     },
-    [activeCheckoutTarget, cart, cartTotals, currentBusiness, currentCashier, activeShift, orderType, selectedTable, selectedRoom, customerName, orderDiscountPercent, orderHistory.length]
+    [activeCheckoutTarget, cart, cartTotals, currentBusiness, currentCashier, activeShift, orderType, selectedTable, selectedRoom, customerName, orderDiscountPercent, orderHistory.length, printerConfig]
   );
 
   const refundOrder = (orderId: string) => {
     soundFx.playError();
+    offlineSyncManager.enqueueAction('refund_order', { orderId });
     setOrderHistory((prev) =>
       prev.map((ord) => (ord.id === orderId ? { ...ord, status: 'refunded' } : ord))
     );
@@ -1836,6 +1955,17 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isHighContrast,
         setIsHighContrast,
         currencySymbol: currentBusiness.currencySymbol || 'KSh',
+        printerConfig,
+        updatePrinterConfig,
+        showWifiPrinterModal,
+        setShowWifiPrinterModal,
+        printReceiptToWifi,
+        printKitchenTicketToWifi,
+        testWifiPrinter,
+        isOnline,
+        pendingOfflineSyncCount,
+        lastSyncTimestamp,
+        triggerManualSync,
       }}
     >
       {children}
