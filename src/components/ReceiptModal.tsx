@@ -178,6 +178,17 @@ export const ReceiptModal: React.FC = () => {
                   <span>RECEIPT NO:</span>
                   <strong className="text-slate-950 font-bold">{order.orderNumber}</strong>
                 </div>
+                {order.transactionId && (
+                  <div className="flex justify-between text-[9px] text-slate-500 font-mono">
+                    <span>TXN UUID:</span>
+                    <span>{order.transactionId}</span>
+                  </div>
+                )}
+                {order.isOfflineRecord && (
+                  <div className="p-1 my-1 bg-amber-100 border border-amber-300 text-amber-900 font-bold text-center rounded text-[9px] uppercase tracking-wider">
+                    Offline Transaction • Saved Locally ({order.syncStatus === 'SYNCED' ? 'Synced' : 'Pending Cloud Sync'})
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span>DATE & TIME:</span>
                   <span>{orderDate}</span>

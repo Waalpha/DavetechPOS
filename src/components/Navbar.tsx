@@ -66,6 +66,7 @@ export const Navbar: React.FC = () => {
     setShowWifiPrinterModal,
     isOnline,
     pendingOfflineSyncCount,
+    syncProgress,
   } = usePOS();
 
   const [showBusinessDropdown, setShowBusinessDropdown] = useState(false);
@@ -483,44 +484,56 @@ export const Navbar: React.FC = () => {
             </button>
           )}
 
-          {/* Online / Offline Service Worker Resilience Status */}
+          {/* Online / Offline Service Worker Resilience Status Indicator */}
           <button
             onClick={() => {
               soundFx.playClick();
               setShowOfflineSyncModal(true);
             }}
-            className={`p-2 rounded-xl text-xs border transition-all relative cursor-pointer flex items-center gap-1.5 ${
+            className={`px-2.5 py-1.5 rounded-xl text-xs border font-extrabold transition-all relative cursor-pointer flex items-center gap-1.5 shadow-xs ${
               !isOnline
-                ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
-                : pendingOfflineSyncCount > 0
-                ? 'bg-indigo-50 text-indigo-800 border-indigo-200 hover:bg-indigo-100'
-                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200 ring-1 ring-amber-400/40'
+                : syncProgress.syncState === 'syncing'
+                ? 'bg-blue-100 text-blue-900 border-blue-300 hover:bg-blue-200 animate-pulse'
+                : syncProgress.syncState === 'synced' && syncProgress.syncedCount > 0
+                ? 'bg-emerald-100 text-emerald-900 border-emerald-300 hover:bg-emerald-200'
+                : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
             }`}
             title={
               !isOnline
-                ? 'Offline Outage Mode Active (Service Worker running) - Click to manage'
-                : pendingOfflineSyncCount > 0
-                ? `${pendingOfflineSyncCount} actions queued for sync - Click to view`
-                : 'Service Worker Active & Online - Click to inspect cache'
+                ? `Offline Mode Active — ${pendingOfflineSyncCount} transaction(s) stored locally in IndexedDB`
+                : syncProgress.syncState === 'syncing'
+                ? `Synchronizing ${pendingOfflineSyncCount} sales with cloud server...`
+                : `System Online & Synchronized`
             }
             id="btn-navbar-offline-sync"
           >
-            <div className="relative">
+            <div className="relative flex items-center">
               {!isOnline ? (
-                <WifiOff className="w-4 h-4 text-amber-700" />
-              ) : pendingOfflineSyncCount > 0 ? (
-                <CloudUpload className="w-4 h-4 text-indigo-600 animate-pulse" />
+                <WifiOff className="w-4 h-4 text-amber-700 shrink-0" />
+              ) : syncProgress.syncState === 'syncing' ? (
+                <CloudUpload className="w-4 h-4 text-blue-700 animate-spin shrink-0" />
+              ) : syncProgress.syncState === 'synced' && syncProgress.syncedCount > 0 ? (
+                <Check className="w-4 h-4 text-emerald-700 shrink-0" />
               ) : (
-                <HardDrive className="w-4 h-4 text-emerald-600" />
+                <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-emerald-300 shrink-0 inline-block"></span>
               )}
-              {pendingOfflineSyncCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 px-1 py-0.2 bg-amber-500 text-slate-950 font-black text-[9px] rounded-full ring-2 ring-white">
+              {pendingOfflineSyncCount > 0 && !isOnline && (
+                <span className="ml-1 px-1 py-0.2 bg-amber-500 text-slate-950 font-black text-[9px] rounded-full">
                   {pendingOfflineSyncCount}
                 </span>
               )}
             </div>
-            <span className="text-[10px] font-extrabold hidden lg:inline">
-              {!isOnline ? 'Offline' : pendingOfflineSyncCount > 0 ? `${pendingOfflineSyncCount} Queued` : 'Cached'}
+            <span className="text-[10px] uppercase tracking-wide">
+              {!isOnline
+                ? pendingOfflineSyncCount > 0
+                  ? `OFFLINE (${pendingOfflineSyncCount} SAVED)`
+                  : 'OFFLINE (SAVED LOCALLY)'
+                : syncProgress.syncState === 'syncing'
+                ? `SYNCING ${pendingOfflineSyncCount} SALES...`
+                : syncProgress.syncState === 'synced' && syncProgress.syncedCount > 0
+                ? `${syncProgress.syncedCount} SALES SYNCHRONIZED`
+                : 'ONLINE'}
             </span>
           </button>
 

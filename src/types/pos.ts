@@ -16,6 +16,30 @@ export type BillStatus = 'unpaid' | 'partially_paid' | 'paid' | 'voided' | 'char
 
 export type KitchenStatus = 'pending' | 'cooking' | 'ready' | 'served';
 
+export type DarajaEnvironment = 'sandbox' | 'live';
+export type DarajaIdentifierType = 'till' | 'paybill';
+
+export interface Daraja3Config {
+  enabled: boolean;
+  environment: DarajaEnvironment; // 'sandbox' | 'live'
+  appKey: string; // Daraja 3.0 Consumer Key
+  appSecret: string; // Daraja 3.0 Consumer Secret
+  passkey: string; // Lipa Na M-Pesa Online Passkey
+  shortcode: string; // Business ShortCode (e.g. 174379 sandbox or Till/Paybill number)
+  identifierType: DarajaIdentifierType; // 'till' | 'paybill'
+  partyB?: string; // Store number / Till number
+  callbackUrl: string; // Webhook callback URL
+  c2bValidationUrl?: string; // C2B Validation URL
+  c2bConfirmationUrl?: string; // C2B Confirmation URL
+  accountReferencePrefix: string; // e.g. 'DAVETECH'
+  transactionDesc: string; // e.g. 'Payment for Food & Drinks'
+  autoQueryTimeoutSec: number; // Timeout in seconds (e.g. 25)
+  enableInstantPush: boolean; // Auto-trigger STK on phone number entry
+  lastTestedAt?: string;
+  testStatus?: 'success' | 'failed' | 'idle';
+  lastTestMessage?: string;
+}
+
 export interface BusinessTenant {
   id: string;
   name: string;
@@ -35,6 +59,7 @@ export interface BusinessTenant {
   mpesaTillNumber: string; // e.g. '893421'
   mpesaPaybillNumber: string; // e.g. '247247'
   mpesaAccountInstructions: string; // e.g. 'Table Number or Guest Name'
+  daraja3Config?: Daraja3Config;
 }
 
 export type UserRole = 'manager' | 'cashier';
@@ -78,6 +103,8 @@ export interface ShiftRecord {
   mpesaSales: number;
   cardSales: number;
   roomSales: number;
+  offlineSalesCount?: number;
+  offlineSalesTotal?: number;
   cashDrops: { id: string; amount: number; reason: string; time: string }[];
   status: 'open' | 'closed';
 }
@@ -174,6 +201,11 @@ export interface OrderRecord {
   billStatus: BillStatus; // 'unpaid' | 'partially_paid' | 'paid' | 'voided' | 'charged_to_room'
   kitchenStatus?: KitchenStatus;
   roundCount?: number;
+  // Offline Resilience & Idempotency
+  transactionId?: string; // Unique Local ID / Idempotency Key (e.g. OFF-20260827-0001)
+  isOfflineRecord?: boolean;
+  syncStatus?: 'PENDING' | 'SYNCING' | 'SYNCED' | 'FAILED';
+  offlineSyncTimestamp?: string;
 }
 
 export interface TableOrderRound {

@@ -21,6 +21,7 @@ import {
   WaiterReadyNotification,
   TableOrderRound,
   WifiPrinterConfig,
+  Daraja3Config,
 } from '../types/pos';
 import {
   INITIAL_BUSINESSES,
@@ -41,7 +42,22 @@ import {
   sendWifiPrinterTest,
 } from '../utils/printerService';
 import { syncCoreDataToServiceWorker } from '../utils/serviceWorkerRegistration';
-import { offlineSyncManager } from '../utils/offlineSyncManager';
+import { offlineSyncManager, SyncProgressUpdate } from '../utils/offlineSyncManager';
+import {
+  cacheProductsToDb,
+  cacheCategoriesToDb,
+  cacheCashiersToDb,
+  cacheConfigToDb,
+  saveShiftToDb,
+  getAllOfflineTransactions,
+  OfflineTransactionRecord,
+} from '../utils/offlineDb';
+import {
+  DEFAULT_DARAJA3_CONFIG,
+  testDaraja3Connection,
+  initiateDaraja3StkPush,
+  StkPushResult,
+} from '../utils/darajaService';
 
 export interface CheckoutTargetInfo {
   tableId?: string;
@@ -223,11 +239,34 @@ interface POSContextType {
   printKitchenTicketToWifi: (ticket: OrderRecord | KdsTicket) => Promise<{ success: boolean; message: string; modeUsed?: string }>;
   testWifiPrinter: () => Promise<{ success: boolean; message: string }>;
 
-  // Offline & Service Worker Resilience
+  // Offline-First & Service Worker Resilience
   isOnline: boolean;
   pendingOfflineSyncCount: number;
   lastSyncTimestamp: string | null;
+  syncProgress: SyncProgressUpdate;
+  offlineTransactions: OfflineTransactionRecord[];
+  refreshOfflineTransactions: () => Promise<void>;
+  retryFailedOfflineTransactions: () => Promise<{ syncedCount: number; errors: number }>;
   triggerManualSync: () => Promise<{ syncedCount: number; errors: number }>;
+
+  // Payment Reset & Clean Slate
+  resetAllPaymentsAndStartFresh: (options?: {
+    resetTables?: boolean;
+    resetShifts?: boolean;
+    resetKds?: boolean;
+    preserveCatalog?: boolean;
+  }) => { ordersCleared: number; tablesReset: number; timestamp: string };
+
+  // Safaricom Daraja 3.0 Lipa Na M-Pesa API Integration
+  daraja3Config: Daraja3Config;
+  updateDaraja3Config: (updated: Partial<Daraja3Config>) => void;
+  testDaraja3Config: () => Promise<{ success: boolean; message: string; token?: string }>;
+  triggerDaraja3StkPush: (params: {
+    phone: string;
+    amount: number;
+    reference?: string;
+    orderNumber?: string;
+  }) => Promise<StkPushResult>;
 }
 
 const POSContext = createContext<POSContextType | undefined>(undefined);
@@ -748,23 +787,60 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem('davetech_tables', JSON.stringify(tables));
   }, [tables]);
 
-  // Offline & Service Worker Resilience State
+  // Offline-First & Service Worker Resilience State
   const [isOnline, setIsOnline] = useState<boolean>(() => offlineSyncManager.getIsOnline());
-  const [pendingOfflineSyncCount, setPendingOfflineSyncCount] = useState<number>(() => offlineSyncManager.getPendingCount());
+  const [syncProgress, setSyncProgress] = useState<SyncProgressUpdate>({
+    isOnline: offlineSyncManager.getIsOnline(),
+    syncState: offlineSyncManager.getSyncState(),
+    pendingCount: 0,
+    syncedCount: 0,
+    failedCount: 0,
+    lastSyncTimestamp: offlineSyncManager.getLastSyncTime(),
+    statusMessage: offlineSyncManager.getStatusMessage(),
+  });
+  const [pendingOfflineSyncCount, setPendingOfflineSyncCount] = useState<number>(0);
   const [lastSyncTimestamp, setLastSyncTimestamp] = useState<string | null>(() => offlineSyncManager.getLastSyncTime());
+  const [offlineTransactions, setOfflineTransactions] = useState<OfflineTransactionRecord[]>([]);
+
+  const refreshOfflineTransactions = useCallback(async () => {
+    try {
+      const records = await getAllOfflineTransactions();
+      setOfflineTransactions(records);
+    } catch {}
+  }, []);
 
   // Subscribe to network status & sync queue changes
   useEffect(() => {
-    const unsubscribe = offlineSyncManager.subscribe((online, count) => {
-      setIsOnline(online);
-      setPendingOfflineSyncCount(count);
-      setLastSyncTimestamp(offlineSyncManager.getLastSyncTime());
+    refreshOfflineTransactions();
+    const unsubscribe = offlineSyncManager.subscribe((update) => {
+      setIsOnline(update.isOnline);
+      setSyncProgress(update);
+      setPendingOfflineSyncCount(update.pendingCount);
+      setLastSyncTimestamp(update.lastSyncTimestamp);
+      refreshOfflineTransactions();
+
+      // Reconcile orderHistory sync status
+      if (update.syncState === 'synced' || update.syncedCount > 0) {
+        setOrderHistory((prev) =>
+          prev.map((ord) => {
+            if (ord.isOfflineRecord && ord.syncStatus !== 'SYNCED') {
+              return { ...ord, syncStatus: 'SYNCED', offlineSyncTimestamp: new Date().toISOString() };
+            }
+            return ord;
+          })
+        );
+      }
     });
     return unsubscribe;
-  }, []);
+  }, [refreshOfflineTransactions]);
 
-  // Proactively cache core POS data to Service Worker
+  // Proactively cache core POS data to IndexedDB & Service Worker
   useEffect(() => {
+    cacheProductsToDb(products);
+    cacheCategoriesToDb(categories);
+    cacheCashiersToDb(cashiers);
+    cacheConfigToDb('current_business', currentBusiness);
+
     syncCoreDataToServiceWorker({
       businesses,
       currentBusinessId,
@@ -774,7 +850,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       cashiers,
       lastUpdated: new Date().toISOString(),
     });
-  }, [businesses, currentBusinessId, products, tables, cashiers]);
+  }, [businesses, currentBusiness, currentBusinessId, products, categories, tables, cashiers]);
 
   // Manual Trigger for sync
   const triggerManualSync = useCallback(async () => {
@@ -782,10 +858,27 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const result = await offlineSyncManager.processSyncQueue();
     if (result.syncedCount > 0) {
       soundFx.playSuccess();
+      setOrderHistory((prev) =>
+        prev.map((ord) => {
+          if (ord.isOfflineRecord && ord.syncStatus !== 'SYNCED') {
+            return { ...ord, syncStatus: 'SYNCED', offlineSyncTimestamp: new Date().toISOString() };
+          }
+          return ord;
+        })
+      );
     }
+    await refreshOfflineTransactions();
     setLastSyncTimestamp(offlineSyncManager.getLastSyncTime());
     return result;
-  }, []);
+  }, [refreshOfflineTransactions]);
+
+  // Retry failed transactions
+  const retryFailedOfflineTransactions = useCallback(async () => {
+    soundFx.playClick();
+    const result = await offlineSyncManager.processSyncQueue();
+    await refreshOfflineTransactions();
+    return result;
+  }, [refreshOfflineTransactions]);
 
   // Protected View Switching
   const setCurrentView = (view: POSViewType) => {
@@ -940,6 +1033,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'open',
     };
     setActiveShift(newShift);
+    saveShiftToDb(newShift).catch(() => {});
   };
 
   const endShift = (closingCashActual: number): ShiftRecord | null => {
@@ -952,6 +1046,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'closed',
     };
     setActiveShift(null);
+    saveShiftToDb(closed).catch(() => {});
     return closed;
   };
 
@@ -960,7 +1055,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     soundFx.playSuccess();
     setActiveShift((prev) => {
       if (!prev) return null;
-      return {
+      const updated: ShiftRecord = {
         ...prev,
         cashDrops: [
           ...prev.cashDrops,
@@ -972,6 +1067,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           },
         ],
       };
+      saveShiftToDb(updated).catch(() => {});
+      return updated;
     });
   };
 
@@ -1672,6 +1769,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const billStatusValue = paymentMethod === 'room_charge' ? 'charged_to_room' : 'paid';
 
+      const isCurrentTxOffline = !isOnline;
+      const offlineTxId = offlineSyncManager.generateOfflineTransactionId();
+
       const newOrder: OrderRecord = {
         id: `ord-${Date.now()}`,
         orderNumber: orderNum,
@@ -1705,6 +1805,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         status: 'completed',
         billStatus: billStatusValue,
         kitchenStatus: 'served',
+        transactionId: offlineTxId,
+        isOfflineRecord: isCurrentTxOffline,
+        syncStatus: isCurrentTxOffline ? 'PENDING' : 'SYNCED',
+        offlineSyncTimestamp: !isCurrentTxOffline ? new Date().toISOString() : undefined,
       };
 
       // Update Order History
@@ -1733,14 +1837,20 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             });
           }
 
-          return {
+          const updatedShift: ShiftRecord = {
             ...prev,
             totalSales: prev.totalSales + amt,
             cashSales: prev.cashSales + cashAdd,
             mpesaSales: prev.mpesaSales + mpesaAdd,
             cardSales: prev.cardSales + cardAdd,
             roomSales: prev.roomSales + roomAdd,
+            offlineSalesCount: (prev.offlineSalesCount || 0) + (isCurrentTxOffline ? 1 : 0),
+            offlineSalesTotal: (prev.offlineSalesTotal || 0) + (isCurrentTxOffline ? amt : 0),
           };
+
+          // Save shift state to IndexedDB
+          saveShiftToDb(updatedShift);
+          return updatedShift;
         });
       }
 
@@ -1802,8 +1912,51 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       clearCart();
       soundFx.playSuccess();
 
-      // Enqueue offline action for sync resilience
-      offlineSyncManager.enqueueAction('order_completed', newOrder);
+      // Persist transaction record directly to IndexedDB & sync queue
+      offlineSyncManager.recordOfflineSale({
+        transactionId: offlineTxId,
+        orderId: newOrder.id,
+        orderNumber: newOrder.orderNumber,
+        businessId: newOrder.businessId,
+        businessName: newOrder.businessName,
+        cashierId: newOrder.cashierId,
+        cashierName: newOrder.cashierName,
+        waiterName: newOrder.waiterName,
+        shiftId: newOrder.shiftId,
+        createdAt: newOrder.createdAt,
+        items: newOrder.items.map((i) => ({
+          productId: i.product.id,
+          productName: i.product.name,
+          quantity: i.quantity,
+          unitPrice: i.unitPrice,
+          totalPrice: i.totalPrice,
+          modifiersSummary: i.selectedModifiers.map((m) => m.selectedOption).join(', '),
+          notes: i.itemNotes,
+          isInventory: !!i.product.isInventory,
+        })),
+        orderType: newOrder.orderType,
+        tableNumber: newOrder.tableNumber,
+        tableId: newOrder.tableId,
+        roomNumber: newOrder.roomNumber,
+        guestName: newOrder.guestName,
+        customerName: newOrder.customerName,
+        customerPhone: newOrder.customerPhone,
+        subtotal: newOrder.subtotal,
+        taxAmount: newOrder.taxAmount,
+        discountAmount: newOrder.discountAmount,
+        discountPercent: newOrder.discountPercent,
+        totalAmount: newOrder.totalAmount,
+        paymentMethod: newOrder.paymentMethod,
+        paymentReference: newOrder.mpesaRef || (newOrder.cardLast4 ? `Card ****${newOrder.cardLast4}` : undefined),
+        paymentBreakdown: newOrder.paymentBreakdown,
+        amountTendered: newOrder.amountTendered,
+        changeGiven: newOrder.changeGiven,
+        mpesaRef: newOrder.mpesaRef,
+        cardLast4: newOrder.cardLast4,
+        isOfflineRecord: isCurrentTxOffline,
+      }).then(() => {
+        refreshOfflineTransactions();
+      }).catch((e) => console.warn('[POSContext] recordOfflineSale err:', e));
 
       // Auto-print receipt to Wi-Fi printer if enabled
       if (printerConfig.enabled && printerConfig.autoPrintReceipt) {
@@ -1812,7 +1965,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return newOrder;
     },
-    [activeCheckoutTarget, cart, cartTotals, currentBusiness, currentCashier, activeShift, orderType, selectedTable, selectedRoom, customerName, orderDiscountPercent, orderHistory.length, printerConfig]
+    [activeCheckoutTarget, cart, cartTotals, currentBusiness, currentCashier, activeShift, orderType, selectedTable, selectedRoom, customerName, orderDiscountPercent, orderHistory.length, isOnline, printerConfig, refreshOfflineTransactions]
   );
 
   const refundOrder = (orderId: string) => {
@@ -1840,6 +1993,157 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       soundFx.playClick();
     }
   };
+
+  // Safaricom Daraja 3.0 Lipa Na M-Pesa Configuration & Helpers
+  const daraja3Config = useMemo<Daraja3Config>(() => {
+    return currentBusiness.daraja3Config || DEFAULT_DARAJA3_CONFIG;
+  }, [currentBusiness]);
+
+  const updateDaraja3Config = useCallback((updated: Partial<Daraja3Config>) => {
+    soundFx.playClick();
+    setBusinesses((prev) =>
+      prev.map((b) => {
+        if (b.id === currentBusinessId) {
+          const currentConfig = b.daraja3Config || DEFAULT_DARAJA3_CONFIG;
+          return {
+            ...b,
+            daraja3Config: {
+              ...currentConfig,
+              ...updated,
+            },
+          };
+        }
+        return b;
+      })
+    );
+  }, [currentBusinessId]);
+
+  const testDaraja3Config = useCallback(async () => {
+    soundFx.playClick();
+    const config = currentBusiness.daraja3Config || DEFAULT_DARAJA3_CONFIG;
+    const result = await testDaraja3Connection(config);
+    
+    // Update business state with test status
+    updateDaraja3Config({
+      lastTestedAt: new Date().toISOString(),
+      testStatus: result.success ? 'success' : 'failed',
+      lastTestMessage: result.message,
+    });
+
+    if (result.success) {
+      soundFx.playSuccess();
+    } else {
+      soundFx.playError();
+    }
+
+    return result;
+  }, [currentBusiness, updateDaraja3Config]);
+
+  const triggerDaraja3StkPush = useCallback(
+    async (params: { phone: string; amount: number; reference?: string; orderNumber?: string }) => {
+      const config = currentBusiness.daraja3Config || DEFAULT_DARAJA3_CONFIG;
+      return await initiateDaraja3StkPush(config, {
+        phone: params.phone,
+        amount: params.amount,
+        accountReference: params.reference || `${config.accountReferencePrefix}-${params.orderNumber || 'SALE'}`,
+        transactionDesc: config.transactionDesc,
+      });
+    },
+    [currentBusiness]
+  );
+
+  // Reset all payments, sales ledger, active unpaid tabs, shifts, and start fresh
+  const resetAllPaymentsAndStartFresh = useCallback(
+    (options?: {
+      resetTables?: boolean;
+      resetShifts?: boolean;
+      resetKds?: boolean;
+      preserveCatalog?: boolean;
+    }) => {
+      const ordersCount = orderHistory.length + activeUnpaidOrders.length + parkedOrders.length;
+
+      // 1. Clear order history, active unpaid orders, parked orders, cart
+      setOrderHistory([]);
+      setActiveUnpaidOrders([]);
+      setParkedOrders([]);
+      setCart([]);
+      setLastCompletedOrder(null);
+      setActiveCheckoutTarget(null);
+
+      localStorage.setItem('davetech_orders', JSON.stringify([]));
+      localStorage.setItem('davetech_active_orders', JSON.stringify([]));
+      localStorage.setItem('davetech_parked_orders', JSON.stringify([]));
+
+      // 2. Reset Tables to available
+      let tablesCount = 0;
+      if (options?.resetTables !== false) {
+        setTables((prev) =>
+          prev.map((t) => ({
+            ...t,
+            status: 'available',
+            activeOrderId: undefined,
+            activeOrderTotal: 0,
+            activeGuests: 0,
+            assignedWaiter: undefined,
+            openedAt: undefined,
+            rounds: [],
+            activeItems: [],
+            specialInstructions: undefined,
+            billRequestedAt: undefined,
+            paidAt: undefined,
+          }))
+        );
+        tablesCount = tables.length;
+      }
+
+      // 3. Reset Active Shift float & counters to 0 sales
+      if (options?.resetShifts !== false && activeShift) {
+        setActiveShift((prev) =>
+          prev
+            ? {
+                ...prev,
+                totalSales: 0,
+                cashSales: 0,
+                mpesaSales: 0,
+                cardSales: 0,
+                roomSales: 0,
+                cashDrops: [],
+                startTime: new Date().toISOString(),
+              }
+            : null
+        );
+      }
+
+      // 4. Reset KDS tickets & notifications
+      if (options?.resetKds !== false) {
+        setKdsTickets([]);
+        setWaiterNotifications([]);
+      }
+
+      // 5. Reset Hotel Rooms folio balances
+      setHotelRooms((prev) =>
+        prev.map((r) => ({
+          ...r,
+          folioBalance: 0,
+        }))
+      );
+
+      soundFx.playSuccess();
+
+      // Enqueue offline action for sync resilience
+      offlineSyncManager.enqueueAction('reset_payments_ledger', {
+        timestamp: new Date().toISOString(),
+        clearedOrdersCount: ordersCount,
+      });
+
+      return {
+        ordersCleared: ordersCount,
+        tablesReset: tablesCount,
+        timestamp: new Date().toISOString(),
+      };
+    },
+    [orderHistory.length, activeUnpaidOrders.length, parkedOrders.length, tables.length, activeShift]
+  );
 
   return (
     <POSContext.Provider
@@ -1965,7 +2269,16 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isOnline,
         pendingOfflineSyncCount,
         lastSyncTimestamp,
+        syncProgress,
+        offlineTransactions,
+        refreshOfflineTransactions,
+        retryFailedOfflineTransactions,
         triggerManualSync,
+        resetAllPaymentsAndStartFresh,
+        daraja3Config,
+        updateDaraja3Config,
+        testDaraja3Config,
+        triggerDaraja3StkPush,
       }}
     >
       {children}

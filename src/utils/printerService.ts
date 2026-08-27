@@ -92,8 +92,17 @@ export function generateReceiptPlainText(
   lines.push(line('=', width));
 
   lines.push(row('RECEIPT NO:', order.orderNumber, width));
+  if (order.transactionId) {
+    lines.push(row('TXN UUID:', order.transactionId, width));
+  }
   lines.push(row('DATE/TIME:', orderDate, width));
   lines.push(row('CASHIER:', order.cashierName, width));
+  if (order.isOfflineRecord) {
+    lines.push(line('*', width));
+    lines.push(center('** OFFLINE TRANSACTION **', width));
+    lines.push(center(`SYNC STATUS: ${order.syncStatus || 'PENDING'}`, width));
+    lines.push(line('*', width));
+  }
   if (order.tableNumber) lines.push(row('TABLE:', order.tableNumber, width));
   if (order.roomNumber) lines.push(row('ROOM:', `${order.roomNumber} (${order.guestName || 'Guest'})`, width));
   if (order.customerName) lines.push(row('CUSTOMER:', order.customerName, width));

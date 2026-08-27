@@ -1,6 +1,6 @@
 {
   "name": "Davetech POS",
-  "description": "A modern touch-screen cloud POS system for hotels, restaurants, bars, shops, and service businesses.",
+  "description": "A modern touch-screen POS system with Daraja 3.0 M-Pesa integration, multi-branch management, offline sync, and manager ledger reset tools for hotels, restaurants, bars, and retail.",
   "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

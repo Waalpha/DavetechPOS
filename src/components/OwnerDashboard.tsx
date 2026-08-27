@@ -54,12 +54,15 @@ import {
 import { usePOS } from '../context/POSContext';
 import { BusinessMode, CashierUser, OrderRecord, ProductItem, UserRole } from '../types/pos';
 import { soundFx } from '../utils/audio';
+import { Daraja3SettingsCard } from './Daraja3SettingsCard';
+import { ResetPaymentsModal } from './ResetPaymentsModal';
 
 type DashboardTabType =
   | 'overview'
   | 'products'
   | 'inventory'
   | 'reports'
+  | 'daraja'
   | 'cashiers'
   | 'users'
   | 'tenants'
@@ -153,6 +156,7 @@ export const OwnerDashboard: React.FC = () => {
   const [bizAddress, setBizAddress] = useState(currentBusiness.address);
   const [bizFooter, setBizFooter] = useState(currentBusiness.receiptFooter);
   const [settingsSaved, setSettingsSaved] = useState(false);
+  const [showResetPaymentsModal, setShowResetPaymentsModal] = useState(false);
 
   // Analytics Metrics calculations
   const totalSales = useMemo(() => {
@@ -585,7 +589,19 @@ export const OwnerDashboard: React.FC = () => {
         </div>
 
         {/* Global Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => {
+              soundFx.playClick();
+              setShowResetPaymentsModal(true);
+            }}
+            className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-xl border border-rose-200 flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors"
+            id="btn-header-reset-payments"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
+            <span>Reset All Payments & Start Fresh</span>
+          </button>
+
           <button
             onClick={handleExportCSV}
             className="px-3.5 py-2 bg-white hover:bg-slate-50 text-emerald-700 font-bold text-xs rounded-xl border border-slate-200 flex items-center gap-1.5 shadow-xs cursor-pointer"
@@ -604,6 +620,7 @@ export const OwnerDashboard: React.FC = () => {
           { id: 'products', label: `Products & Pricing (${products.length})`, icon: Package },
           { id: 'inventory', label: `Inventory & Stock (${inventoryStats.inventoryCount}/${inventoryStats.totalCount})`, icon: Boxes },
           { id: 'reports', label: `Sales Ledger & Reports (${orderHistory.length})`, icon: FileBarChart },
+          { id: 'daraja', label: 'Safaricom Daraja 3.0', icon: Smartphone },
           { id: 'cashiers', label: 'Cashier Performance', icon: Award },
           { id: 'users', label: `Users & Permissions (${cashiers.length})`, icon: Users },
           { id: 'tenants', label: 'Multi-Branch SaaS', icon: Building },
@@ -1589,6 +1606,15 @@ export const OwnerDashboard: React.FC = () => {
         )}
 
         {/* ========================================================
+            DARAJA 3.0 M-PESA INTEGRATION TAB
+            ======================================================== */}
+        {activeTab === 'daraja' && (
+          <div className="space-y-5 animate-in fade-in max-w-4xl">
+            <Daraja3SettingsCard />
+          </div>
+        )}
+
+        {/* ========================================================
             7. MULTI-BRANCH SAAS
             ======================================================== */}
         {activeTab === 'tenants' && (
@@ -1811,6 +1837,43 @@ export const OwnerDashboard: React.FC = () => {
                 >
                   <Printer className="w-4 h-4" />
                   <span>Configure Wi-Fi Printer & Test</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Safaricom Daraja 3.0 Lipa Na M-Pesa Settings Card */}
+            <div className="pt-2">
+              <Daraja3SettingsCard />
+            </div>
+
+            {/* Financial Maintenance & Clean Slate Reset Card */}
+            <div className="p-5 bg-rose-50/70 rounded-2xl border border-rose-200 space-y-4 shadow-xs" id="card-reset-payments-settings">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 bg-rose-600 text-white rounded-2xl shrink-0 mt-0.5 shadow-xs">
+                    <RotateCcw className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-sm text-slate-900">
+                      Financial Maintenance & Ledger Reset
+                    </h3>
+                    <p className="text-xs text-rose-700 leading-relaxed mt-0.5">
+                      Clear historical payments, re-zero register sales ledger ({currencySymbol} 0.00), reset occupied tables, and start fresh for a new shift or business period.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playClick();
+                    setShowResetPaymentsModal(true);
+                  }}
+                  className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center gap-2 cursor-pointer shrink-0 self-start sm:self-center"
+                  id="btn-settings-open-reset-payments"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Reset All Payments & Start Fresh</span>
                 </button>
               </div>
             </div>
@@ -2144,6 +2207,12 @@ export const OwnerDashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Reset Payments Confirmation Modal */}
+      <ResetPaymentsModal
+        isOpen={showResetPaymentsModal}
+        onClose={() => setShowResetPaymentsModal(false)}
+      />
     </div>
   );
 };
